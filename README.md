@@ -2,7 +2,7 @@
 Manage your stored passwords with pass and fzf in a popup window. For qutebrowser.
 
 ## Usage
-Passwords are stored in `pass` with the format: domainname/login. For each url domain, multiple logins can be saved, associated with a pasword by `pass`. fzfpass is intended to be use with the script [qute-pass](https://github.com/qutebrowser/qutebrowser/blob/main/misc/userscripts/qute-pass) provided by qutebrowser allowing to insert the login informations on the webpages, according to the domain.
+Passwords are stored in `pass` with the format: domainname/login. For each url domain, multiple logins can be saved, associated with a pasword by `pass`. fzfpass is intended to be used with the script [qute-pass](https://github.com/qutebrowser/qutebrowser/blob/main/misc/userscripts/qute-pass) provided by qutebrowser allowing to insert the login informations on the webpages, according to the domain.
 
 With fzfpass, you can :
 - view passwords (potentially protected by a passphrase)
