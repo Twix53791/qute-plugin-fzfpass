@@ -1,0 +1,24 @@
+#!/bin/bash
+# Run qutebrowser/bin/qute-plugin-fzfookmarks
+# or add a new login data for the current page
+# domain.
+#=============================================
+# Add bin folder to PATH in .bashrc or .zshrc, or here:
+# export PATH="$HOME/.config/qutebrowser/bin:$PATH"
+
+term="kitty"
+windowname="qute-plugin-fzfpass"
+quickpasswindow="mini-long"
+font="Iosevka Term Extended"
+termoptions=('-o' 'background_opacity=0.9')
+
+if [[ $1 == "quickadd" ]]; then
+    domain="${QUTE_URL#*//}"
+    domain="${domain%%/*}"
+    entry="$domain/$2"
+
+    $term --name "$quickpasswindow" -o font_family="$font" "${termoptions[@]}" -e pass insert -e "$entry"
+else
+    $term --name "$windowname" -o font_family="$font" "${termoptions[@]}" -e qute-plugin-fzfpass
+fi
+

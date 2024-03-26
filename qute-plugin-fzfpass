@@ -1,0 +1,283 @@
+#!/bin/bash
+# MADE by Twix. https://github.com/Twix53791
+#===========================================
+# Manage your login/password keys with pass
+#  and fzf in qutebrowser
+#
+#===========================================
+#===== Config options ======================
+#
+# Pass directory
+passdir="$HOME/.password-store"
+
+# Passphrase. Is not null, the passwords will be hiden,
+# displayed as "******".
+# The passphrase will be asked to view them.
+passphrase="123"
+
+# Editor
+editor="nano"
+
+# Colors
+C1="\e[34m" # domain
+C2="\e[36m" # login
+C3="\e[32m" # password
+C4="\e[33m" # keybindings
+
+# NOTE: see also _fzf_opts to customize fzf
+# keybindings and display
+#
+#===========================================
+# Tmpfile
+plgdir="/tmp/qute-plugins"
+[[ ! -d $plgdir ]] && mkdir "$plgdir"
+tmpfile="$plgdir/qute-plugin-fzfpass"
+
+#===========================================
+_main_menu (){
+    [[ -n $passphrase ]] && showpass=0
+
+    # Fzf menu display
+    _fzf_opts "main"
+    domains=$(_list_passdomains | fzf)
+
+    action=$(head -1 <<< $domains)
+    [[ ${action:0:1} == ":" ]] && domains=$(tail -n +2 <<< $domains)
+
+    # Actions
+    if [[ $action == ":abort" ]]; then
+        exit
+
+    # Delete the entries. Multiple selection allowed
+    elif [[ $action == ":delete" ]]; then
+        dlist=()
+        while read line; do
+            line="${line%.gpg}" # in case of a raw key
+            dlist+=("$line")
+        done <<< $domains
+
+        # pass not working in while read loop
+        for d in "${dlist[@]}"; do
+            pass rm -r "$d"
+        done
+
+        echo "press a key to continue"
+        read
+        tput reset
+        _main_menu
+
+    # Rename the entries. Multiple selection allowed
+    elif [[ $action == ":rename" ]]; then
+        echo "$domains" > "$tmpfile"
+        $editor "$tmpfile"
+
+        i=1
+        while read D; do
+            newname=$(sed -n "${i}p" $tmpfile)
+            if [[ $newname != $D && -n $newname ]]; then
+                pass mv "$D" "$newname"
+            else
+                echo "name no modified"
+            fi
+            ((i++))
+        done <<< $domains
+
+        echo "press a key to continue"
+        read
+        tput reset
+        _main_menu
+
+    # Create a new key for the current url domain name
+    # Only one can be created
+    # Format: domain/login
+    # pass will ask for the password
+    elif [[ $action == ":new" ]]; then
+        newdomain="${QUTE_URL#*//}"
+        newdomain="${newdomain%%/*}"
+
+        echo "$newdomain/" > "$tmpfile"
+        $editor "$tmpfile"
+
+        newentry=$(head -1 $tmpfile) # we can create only one entry at once
+
+        if _check_new "$newentry"; then
+            pass insert -e "$newdomain/${newentry#*/}"
+        else
+            echo "fzfpass error: new entry format is not valid or the domain already exist"
+            sleep 1
+        fi
+
+        tput reset
+        _main_menu
+
+    # Displays the logins stored for the domain selected. Multiple selection not allowed
+    elif [[ -n $domains ]]; then
+        domain=$(head -1 <<< $domains)
+        _domain_menu "$domain"
+
+    else
+        _main_menu
+    fi
+}
+
+_domain_menu (){
+    _fzf_opts "domain"
+    logins=$(_list_logins | fzf)
+
+    action=$(head -1 <<< $logins)
+    [[ ${action:0:1} == ":" ]] && logins=$(tail -n +2 <<< $logins)
+
+    if [[ $action == ":abort" ]]; then
+        exit
+
+    elif [[ $action == ":back" ]]; then
+        _main_menu
+
+    elif [[ $action == ":showpass" ]]; then
+        read -p "passphrase: " pswd
+        [[ $pswd == $passphrase ]] && showpass=1
+
+        tput reset
+        _domain_menu
+
+    # Delete the entries. Multiple selection allowed
+    elif [[ $action == ":delete" ]]; then
+        llist=()
+        while read line; do
+            llist+=("$line")
+        done <<< $logins
+
+        for l in "${llist[@]}"; do
+            pass rm "$domain/$l"
+        done
+
+        echo "press a key to continue"
+        read
+        tput reset
+        _domain_menu
+
+    # Rename the entries. Multiple selection allowed
+    elif [[ $action == ":rename" ]]; then
+        echo "$logins" > "$tmpfile"
+        $editor "$tmpfile"
+
+        i=1
+        while read L; do
+            newname=$(sed -n "${i}p" $tmpfile)
+            if [[ $newname != $L && -n $newname ]]; then
+                pass mv "$domain/$L" "$domain/$newname"
+            else
+                echo "name no modified"
+            fi
+            ((i++))
+        done <<< $logins
+
+        echo "press a key to continue"
+        read
+        tput reset
+        _domain_menu
+
+    # Create a new login for the current domain
+    elif [[ $action == ":new" ]]; then
+        echo "$domain/" > "$tmpfile"
+        $editor "$tmpfile"
+
+        newentry=$(head -1 $tmpfile)
+
+        if _check_new "$newentry"; then
+            pass insert -e "$domain/${newentry#*/}"
+        else
+            echo "fzfpass error: new entry format is not valid or the domain already exist"
+            sleep 1
+        fi
+
+        tput reset
+        _domain_menu
+
+    # Edit the password of the entry. Multiple selection not allowed
+    elif [[ $action == ":editpass" ]]; then
+        export EDITOR=$editor
+        login=$(head -1 <<< $logins)
+
+        pass edit "$domain/$login"
+
+        tput reset
+        _domain_menu
+
+    fi
+}
+
+_list_passdomains (){
+    cd "$passdir"
+    domains=$(ls)
+    echo -e "$C1$domains"
+}
+
+_list_logins (){
+    logins=$([[ -d $passdir/$domain ]] && ls "$passdir/$domain" | sed 's/\.gpg$//' || echo "$domain")
+    echo -e "$C2$logins"
+}
+
+# Checks if the new entry format is valid
+_check_new (){
+    newentry=$(sed 's/[[:blank:]]*$//' <<< $newentry) # remove trailing spaces
+
+    if [[ $newentry != *"/"* ]]; then
+        return 1
+    elif [[ -z ${newentry##*/} ]]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+_fzf_opts (){
+    if [[ $1 == "main" ]]; then
+        help="ctrl-r: rename  ;  ctrl-d: delete\\nctrl-n: new\\n\\nright: enter  ;  alt-q: esc"
+        previewtext="echo -e \"$C2\"; \
+            [[ -d $passdir/{} ]] && ls $passdir/{} | sed \"s/\.gpg$//\" || echo \"************\"; \
+            echo -e \"\\n\\n$C4$help\""
+
+        export FZF_DEFAULT_OPTS="--reverse --ansi -m \
+              --bind 'change:first' \
+              --bind 'right:accept' \
+              --bind 'esc:execute(echo :abort)+abort,alt-q:execute(echo :abort)+abort' \
+              --bind 'ctrl-r:execute(echo :rename)+accept' \
+              --bind 'ctrl-d:execute(echo :delete)+accept' \
+              --bind 'ctrl-n:execute(echo :new)+accept' \
+              --preview='$previewtext' \
+              --preview-window='50%,wrap,border-none'"
+
+    elif [[ $1 == "domain" ]]; then
+        if [[ $showpass == 0 ]];then
+            showkey="--bind 'ctrl-s:execute(echo :showpass)+accept'"
+            previewcmd="echo -e \"************\""
+            h1="ctrl-r: rename  ;  ctrl-d: delete\\nctrl-n: new     ;  ctrl-e: edit password"
+            h2="\\nctrl-s: show password\\n\\nleft: back  ;  alt-q: esc"
+            help="$h1$h2"
+        else
+            showkey=""
+            previewcmd="[[ -d $passdir/$domain ]] && pass show $domain/{} || pass show ${domain%.gpg*}"
+            h1="ctrl-r: rename  ;  ctrl-d: delete\\nctrl-n: new     ;  ctrl-e: edit password"
+            h2="\\n\\nleft: back  ;  alt-q: esc"
+            help="$h1$h2"
+        fi
+
+        previewtext="echo -e \"$C1$domain$C3\\n\";$previewcmd;echo -e \"\\n$C4$help\""
+
+        export FZF_DEFAULT_OPTS="--reverse --ansi -m $showkey \
+              --bind 'change:first' \
+              --bind 'left:execute(echo :back)+abort' \
+              --bind 'esc:execute(echo :abort)+abort,alt-q:execute(echo :abort)+abort' \
+              --bind 'ctrl-r:execute(echo :rename)+accept' \
+              --bind 'ctrl-d:execute(echo :delete)+accept' \
+              --bind 'ctrl-n:execute(echo :new)+accept' \
+              --bind 'ctrl-e:execute(echo :editpass)+accept' \
+              --preview='$previewtext' \
+              --preview-window='50%,wrap,border-none'"
+    fi
+
+
+}
+
+_main_menu
